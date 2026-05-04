@@ -16,7 +16,7 @@ spec:
     spec:
       containers:
         - name: flask
-          image: cithit/murra176:build-9   #<-----change this!!!!
+          image: cithit/murra176:latest   #<-----change this!!!!
           ports:
             - containerPort: 5000
 
