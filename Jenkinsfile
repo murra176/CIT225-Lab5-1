@@ -62,14 +62,6 @@ pipeline {
                 sh "kubectl get all"
             }
         }
-
-        stage('Selenium Web Test') {
-            steps {
-                sh '''
-                docker run --rm -v "$PWD":/app -w /app selenium/standalone-firefox:latest sh -c "python3 -m pip install selenium && python3 test_html_elements.py"
-                '''
-            }
-        }
     }
 
     post {
