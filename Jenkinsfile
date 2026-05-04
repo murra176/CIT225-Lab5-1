@@ -1,75 +1,67 @@
 pipeline {
-    agent any 
+    agent any
 
     environment {
-        DOCKER_CREDENTIALS_ID = 'roseaw-dockerhub'  
-        DOCKER_IMAGE = 'cithit/roseaw'                               //<-----change this to your MiamiID!
-        IMAGE_TAG = "build-${BUILD_NUMBER}"
-        GITHUB_URL = 'https://github.com/miamioh-cit/225-lab3-9.git' //<-----change this to match this new repository!
-        KUBECONFIG = credentials('roseaw-225')                           //<-----change this to match your kubernetes credentials (MiamiID-225)! 
+        DOCKER_IMAGE = 'YOUR_DOCKERHUB_USERNAME/flask-final'   // CHANGE
+        DOCKER_CREDS = 'docker-creds'                          // CHANGE IF NEEDED
+        GIT_REPO = 'YOUR_GITHUB_REPO_URL'                      // CHANGE
     }
 
     stages {
+
         stage('Checkout') {
             steps {
-                cleanWs()
-                checkout([$class: 'GitSCM', branches: [[name: '*/main']],
-                          userRemoteConfigs: [[url: "${GITHUB_URL}"]]])
+                git "${GIT_REPO}"
+            }
+        }
+
+        stage('Install Dependencies') {
+            steps {
+                sh 'pip install -r requirements.txt'
+                sh 'pip install flake8'
+            }
+        }
+
+        stage('Static Code Analysis') {
+            steps {
+                sh 'flake8 . || true'
             }
         }
 
         stage('Build Docker Image') {
             steps {
-                script {
-                    docker.withRegistry('https://registry-1.docker.io', 'roseaw-dockerhub') {
-                        docker.build("${DOCKER_IMAGE}:${IMAGE_TAG}")
-                    }
-                }
+                sh 'docker build -t $DOCKER_IMAGE:$BUILD_NUMBER .'
             }
         }
 
-        stage('Push Docker Image') {
+        stage('Login to DockerHub') {
             steps {
-                script {
-                    docker.withRegistry('https://index.docker.io/v1/', "${DOCKER_CREDENTIALS_ID}") {
-                        docker.image("${DOCKER_IMAGE}:${IMAGE_TAG}").push()
-                    }
+                withCredentials([usernamePassword(credentialsId: "${DOCKER_CREDS}", usernameVariable: 'USER', passwordVariable: 'PASS')]) {
+                    sh 'echo $PASS | docker login -u $USER --password-stdin'
                 }
             }
         }
 
-        stage('Deploy to Dev Environment') {
+        stage('Push Image') {
             steps {
-                script {
-                    // This sets up the Kubernetes configuration using the specified KUBECONFIG
-                    def kubeConfig = readFile(KUBECONFIG)
-                    // This updates the deployment-dev.yaml to use the new image tag
-                    sh "sed -i 's|${DOCKER_IMAGE}:latest|${DOCKER_IMAGE}:${IMAGE_TAG}|' deployment-dev.yaml"
-                   // sh 'kubectl apply -f pv-claim.yaml'
-                   sh "kubectl apply -f deployment-dev.yaml"
-                }
+                sh 'docker push $DOCKER_IMAGE:$BUILD_NUMBER'
             }
         }
-        
-        stage('Check Kubernetes Cluster') {
+
+        stage('Deploy to Kubernetes') {
             steps {
-                script {
-                    sh "kubectl get all"
-                }
+                sh '''
+                sed -i "s|image: .*|image: $DOCKER_IMAGE:$BUILD_NUMBER|" deployment-dev.yaml
+                kubectl apply -f deployment-dev.yaml
+                '''
             }
         }
-    }
 
-    post {
-
-        success {
-            slackSend color: "good", message: "Build Completed: ${env.JOB_NAME} ${env.BUILD_NUMBER}"
-        }
-        unstable {
-            slackSend color: "warning", message: "Build Completed: ${env.JOB_NAME} ${env.BUILD_NUMBER}"
-        }
-        failure {
-            slackSend color: "danger", message: "Build Completed: ${env.JOB_NAME} ${env.BUILD_NUMBER}"
+        stage('Verify Deployment') {
+            steps {
+                sh 'kubectl get pods'
+                sh 'kubectl get services'
+            }
         }
     }
 }
