@@ -23,7 +23,7 @@ pipeline {
         stage('Static Code Testing') {
             steps {
                 sh '''
-                docker run --rm -v "$PWD":/app -w /app python:3.9-slim sh -c "pip install flake8 && flake8 main.py || true"
+                docker run --rm -v "$PWD":/app -w /app python:3.9-slim sh -c "pip install flake8 && flake8 main.py"
                 '''
             }
         }
@@ -48,18 +48,26 @@ pipeline {
             }
         }
 
-        stage('Deploy to Dev Environment') {
+        stage('Deploy to Kubernetes') {
             steps {
                 script {
-                    sh "sed -i 's|${DOCKER_IMAGE}:latest|${DOCKER_IMAGE}:${IMAGE_TAG}|' deployment-dev.yaml"
+                    sh "sed -i 's|image: .*|image: ${DOCKER_IMAGE}:${IMAGE_TAG}|' deployment-dev.yaml"
                     sh "kubectl apply -f deployment-dev.yaml"
                 }
             }
         }
-        
+
         stage('Check Kubernetes Cluster') {
             steps {
                 sh "kubectl get all"
+            }
+        }
+
+        stage('Selenium Web Test') {
+            steps {
+                sh '''
+                docker run --rm -v "$PWD":/app -w /app selenium/standalone-firefox:latest sh -c "python3 -m pip install selenium && python3 test_html_elements.py"
+                '''
             }
         }
     }
@@ -69,7 +77,7 @@ pipeline {
             slackSend color: "good", message: "Build Completed: ${env.JOB_NAME} ${env.BUILD_NUMBER}"
         }
         unstable {
-            slackSend color: "warning", message: "Build Completed: ${env.JOB_NAME} ${env.BUILD_NUMBER}"
+            slackSend color: "warning", message: "Build Unstable: ${env.JOB_NAME} ${env.BUILD_NUMBER}"
         }
         failure {
             slackSend color: "danger", message: "Build Failed: ${env.JOB_NAME} ${env.BUILD_NUMBER}"
