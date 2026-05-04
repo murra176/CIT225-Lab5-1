@@ -2,27 +2,29 @@ pipeline {
     agent any 
 
     environment {
-        DOCKER_CREDENTIALS_ID = 'roseaw-dockerhub'  
-        DOCKER_IMAGE = 'cithit/murra176'                               //<-----change this to your MiamiID!
+        DOCKER_CREDENTIALS_ID = 'roseaw-dockerhub'
+        DOCKER_IMAGE = 'cithit/murra176'
         IMAGE_TAG = "build-${BUILD_NUMBER}"
-        GITHUB_URL = 'https://github.com/murra176/CIT225-Lab5-1.git' //<-----change this to match this new repository!
-        KUBECONFIG = credentials('murra176-225-sp26')                       //<-----change this to match your kubernetes credentials (MiamiID-225)! 
+        GITHUB_URL = 'https://github.com/murra176/CIT225-Lab5-1.git'
+        KUBECONFIG = credentials('murra176-225-sp26')
     }
 
-    stage('Static Code Testing') {
-    steps {
-        sh '''
-        python3 -m pip install --user flake8 || python3 -m ensurepip --user
-        python3 -m pip install --user flake8
-        python3 -m flake8 main.py || true
-        '''
-    }
-}
+    stages {
+        stage('Checkout') {
+            steps {
+                cleanWs()
+                checkout([$class: 'GitSCM',
+                    branches: [[name: '*/main']],
+                    userRemoteConfigs: [[url: "${GITHUB_URL}"]]
+                ])
+            }
+        }
 
         stage('Static Code Testing') {
             steps {
-                sh 'pip install flake8'
-                sh 'flake8 main.py || true'
+                sh '''
+                docker run --rm -v "$PWD":/app -w /app python:3.9-slim sh -c "pip install flake8 && flake8 main.py || true"
+                '''
             }
         }
 
@@ -49,7 +51,6 @@ pipeline {
         stage('Deploy to Dev Environment') {
             steps {
                 script {
-                    def kubeConfig = readFile(KUBECONFIG)
                     sh "sed -i 's|${DOCKER_IMAGE}:latest|${DOCKER_IMAGE}:${IMAGE_TAG}|' deployment-dev.yaml"
                     sh "kubectl apply -f deployment-dev.yaml"
                 }
@@ -58,9 +59,7 @@ pipeline {
         
         stage('Check Kubernetes Cluster') {
             steps {
-                script {
-                    sh "kubectl get all"
-                }
+                sh "kubectl get all"
             }
         }
     }
@@ -73,7 +72,7 @@ pipeline {
             slackSend color: "warning", message: "Build Completed: ${env.JOB_NAME} ${env.BUILD_NUMBER}"
         }
         failure {
-            slackSend color: "danger", message: "Build Completed: ${env.JOB_NAME} ${env.BUILD_NUMBER}"
+            slackSend color: "danger", message: "Build Failed: ${env.JOB_NAME} ${env.BUILD_NUMBER}"
         }
     }
 }
