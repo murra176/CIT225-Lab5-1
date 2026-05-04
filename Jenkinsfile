@@ -9,14 +9,15 @@ pipeline {
         KUBECONFIG = credentials('murra176-225-sp26')                       //<-----change this to match your kubernetes credentials (MiamiID-225)! 
     }
 
-    stages {
-        stage('Checkout') {
-            steps {
-                cleanWs()
-                checkout([$class: 'GitSCM', branches: [[name: '*/main']],
-                          userRemoteConfigs: [[url: "${GITHUB_URL}"]]])
-            }
-        }
+    stage('Static Code Testing') {
+    steps {
+        sh '''
+        python3 -m pip install --user flake8 || python3 -m ensurepip --user
+        python3 -m pip install --user flake8
+        python3 -m flake8 main.py || true
+        '''
+    }
+}
 
         stage('Static Code Testing') {
             steps {
